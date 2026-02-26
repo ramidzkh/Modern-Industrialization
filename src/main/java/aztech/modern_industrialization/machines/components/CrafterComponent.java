@@ -27,13 +27,6 @@ package aztech.modern_industrialization.machines.components;
 import static aztech.modern_industrialization.util.Simulation.ACT;
 import static aztech.modern_industrialization.util.Simulation.SIMULATE;
 
-import appeng.api.config.Actionable;
-import appeng.api.networking.IGrid;
-import appeng.api.networking.IGridNode;
-import appeng.api.stacks.AEFluidKey;
-import appeng.api.stacks.AEItemKey;
-import appeng.api.stacks.AEKey;
-import appeng.api.storage.StorageHelper;
 import aztech.modern_industrialization.MI;
 import aztech.modern_industrialization.api.machine.component.CrafterAccess;
 import aztech.modern_industrialization.api.machine.component.InventoryAccess;
@@ -386,8 +379,16 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
     public static List<RecipeHolder<MachineRecipe>> getRecipes(ServerLevel level, MachineRecipeType recipeType, List<ConfigurableItemStack> itemInputs) {
         List<RecipeHolder<MachineRecipe>> recipes = new ArrayList<>(recipeType.getFluidOnlyRecipes(level));
         for (ConfigurableItemStack stack : itemInputs) {
-            if (!stack.isEmpty() || (stack.getLockedInstance() != null && stack.source != null && stack.source.getMainNode().isActive())) {
-                recipes.addAll(recipeType.getMatchingRecipes(level, stack.getLockedInstance()));
+            if (stack.me != null) {
+                Item available = stack.me.available();
+
+                if (available != null) {
+                    recipes.addAll(recipeType.getMatchingRecipes(level, available));
+                }
+            }
+
+            if (!stack.isEmpty()) {
+                recipes.addAll(recipeType.getMatchingRecipes(level, stack.getResource().getItem()));
             }
         }
         return recipes;
@@ -472,25 +473,13 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
             }
             int remainingAmount = input.amount();
             for (ConfigurableItemStack stack : stacks) {
-                Item locked = stack.getLockedInstance();
-                ItemStack lockedStack = locked != null ? locked.getDefaultInstance() : null;
-
-                if (input.ingredient().test(lockedStack) && stack.source != null) {
-                    IGridNode node = stack.source.getGridNode();
-                    AEKey what = AEItemKey.of(lockedStack);
-
-                    if (node != null && what != null) {
-                        IGrid grid = node.getGrid();
-                        int taken = (int) StorageHelper.poweredExtraction(grid.getEnergyService(), grid.getStorageService().getInventory(), what, remainingAmount, stack.source.source, Actionable.ofSimulate(simulate));
-                        if (taken > 0 && !simulate) {
-                            stats.addUsedItems(lockedStack.getItem(), taken);
-                        }
-                        remainingAmount -= taken;
-                        if (remainingAmount == 0)
-                            break;
-                    }
+                if (stack.me != null) {
+                    int taken = stack.me.extract(input.ingredient(), remainingAmount, simulate);
+                    remainingAmount -= taken;
+                    if (remainingAmount == 0)
+                        break;
                 }
-
+                else // mixin: hopefully that else doesn't cause a massive pain. might be optional too
                 if (stack.getAmount() > 0 && stack.getResource().test(input.ingredient())) {
                     int taken = Math.min((int) stack.getAmount(), remainingAmount);
                     if (taken > 0 && !simulate) {
@@ -530,27 +519,19 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
                     continue;
                 }
                 ConfigurableFluidStack stack = stacks.get(istack);
-
-                if (stack.getLockedInstance() == null || !input.fluid().test(new FluidStack(stack.getLockedInstance(), 1))) {
-                    continue;
-                }
-
-                if (stack.source != null) {
-                    IGridNode node = stack.source.getGridNode();
-                    AEKey what = AEFluidKey.of(stack.getLockedInstance());
-
-                    if (node != null && what != null) {
-                        IGrid grid = node.getGrid();
-                        int taken = (int) StorageHelper.poweredExtraction(grid.getEnergyService(), grid.getStorageService().getInventory(), what, remainingAmount, stack.source.source, Actionable.ofSimulate(simulate));
-                        if (taken > 0 && !simulate) {
-                            stats.addUsedFluids(stack.getLockedInstance(), taken);
+                if (stack.me != null) {
+                    long taken = stack.me.extract(input.fluid(), remainingAmount, simulate);
+                    if (taken > 0) {
+                        if (oneInputPerStack) {
+                            usedStacks[istack] = true;
                         }
                         remainingAmount -= taken;
+                        // mixin: should be optional to break
                         if (remainingAmount == 0)
                             break;
                     }
                 }
-
+                else // mixin: hopefully that else doesn't cause a massive pain. should be optional
                 if (fluidIngredientMatch(stack.getResource(), input.fluid())) {
                     long taken = Math.min(remainingAmount, stack.getAmount());
                     if (taken > 0) {
@@ -610,6 +591,18 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
                 for (ConfigurableItemStack stack : stacks) {
                     stackId++;
                     ItemVariant key = stack.getResource();
+                    if (stack.me != null) {
+                        int ins = stack.me.insert(output.variant(), remainingAmount, simulate);
+                        remainingAmount -= ins;
+                        if (ins > 0) {
+                            locksToToggle.add(stackId - 1);
+                            lockItems.add(output.variant().getItem());
+                        }
+                        // mixin: should be optional to break
+                        if (remainingAmount == 0)
+                            break;
+                    }
+                    else // mixin: hopefully that else doesn't cause a massive pain. should be optional
                     if (key.equals(output.variant()) || key.isBlank()) {
                         // If simulating or chanced output, respect the adjusted capacity.
                         // If putting the output, don't respect the adjusted capacity in case it was
@@ -617,15 +610,6 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
                         int remainingCapacity = simulate || output.probability() < 1
                                 ? (int) stack.getRemainingCapacityFor(output.variant())
                                 : output.variant().getMaxStackSize() - (int) stack.getAmount();
-                        if (stack.source != null) {
-                            var grid = stack.source.getGridNode();
-
-                            if (grid != null) {
-                                // todo: ins bs below
-                                remainingAmount -= StorageHelper.poweredInsert(grid.getGrid().getEnergyService(), grid.getGrid().getStorageService().getInventory(), AEItemKey.of(output.getStack()), remainingAmount, stack.source.source);
-                            }
-                        }
-
                         int ins = Math.min(remainingAmount, remainingCapacity);
                         if (ins > 0) {
                             if (key.isBlank()) {
@@ -687,9 +671,20 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
             outer:
             for (int tries = 0; tries < 2; ++tries) {
                 for (int j = 0; j < stacks.size(); j++) {
-                    // todo: me hatch
                     ConfigurableFluidStack stack = stacks.get(j);
                     FluidVariant outputKey = FluidVariant.of(output.fluid());
+                    if (stack.me != null) {
+                        long inserted = stack.me.insert(output.fluid(), output.amount(), simulate);
+                        if (inserted > 0) {
+                            locksToToggle.add(j);
+                            lockFluids.add(output.fluid());
+                        }
+                        if (inserted < output.amount()) {
+                            ok = false;
+                        }
+                        break outer;
+                    }
+                    else // mixin: hopefully that else doesn't cause a massive pain. should be optional
                     if (stack.isResourceAllowedByLock(outputKey)
                             && ((tries == 1 && stack.isResourceBlank()) || stack.getResource().equals(outputKey))) {
                         long inserted = Math.min(output.amount(), stack.getRemainingSpace());

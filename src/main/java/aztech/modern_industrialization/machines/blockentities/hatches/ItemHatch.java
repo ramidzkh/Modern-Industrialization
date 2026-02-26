@@ -32,15 +32,15 @@ import aztech.modern_industrialization.machines.BEP;
 import aztech.modern_industrialization.machines.components.OrientationComponent;
 import aztech.modern_industrialization.machines.gui.MachineGuiParameters;
 import aztech.modern_industrialization.machines.guicomponents.AutoExtract;
+import aztech.modern_industrialization.machines.multiblocks.HatchBlockEntity;
 import aztech.modern_industrialization.machines.multiblocks.HatchType;
 import aztech.modern_industrialization.machines.multiblocks.HatchTypes;
-import aztech.modern_industrialization.machines.multiblocks.MEHatchBlockEntity;
 import java.util.List;
 import net.minecraft.network.chat.Component;
 
-public class ItemHatch extends MEHatchBlockEntity {
+public class ItemHatch extends HatchBlockEntity {
     public ItemHatch(BEP bep, MachineGuiParameters guiParams, boolean input, boolean upgradesToSteel, MIInventory inventory) {
-        super(bep, guiParams, OrientationComponent.Params.noFacing(true, false), inventory);
+        super(bep, guiParams, OrientationComponent.Params.noFacing(true, false));
 
         this.input = input;
         this.upgradesToSteel = upgradesToSteel;

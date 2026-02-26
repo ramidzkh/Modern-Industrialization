@@ -48,7 +48,7 @@ import org.jspecify.annotations.Nullable;
  * An item stack that can be configured.
  */
 public class ConfigurableItemStack extends AbstractConfigurableStack<Item, ItemVariant> implements ItemAccess {
-    private int adjustedCapacity = 64;
+    public int adjustedCapacity = 64;
 
     public ConfigurableItemStack() {}
 
