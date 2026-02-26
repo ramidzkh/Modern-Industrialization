@@ -27,6 +27,13 @@ package aztech.modern_industrialization.machines.components;
 import static aztech.modern_industrialization.util.Simulation.ACT;
 import static aztech.modern_industrialization.util.Simulation.SIMULATE;
 
+import appeng.api.config.Actionable;
+import appeng.api.networking.IGrid;
+import appeng.api.networking.IGridNode;
+import appeng.api.stacks.AEFluidKey;
+import appeng.api.stacks.AEItemKey;
+import appeng.api.stacks.AEKey;
+import appeng.api.storage.StorageHelper;
 import aztech.modern_industrialization.MI;
 import aztech.modern_industrialization.api.machine.component.CrafterAccess;
 import aztech.modern_industrialization.api.machine.component.InventoryAccess;
@@ -379,8 +386,8 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
     public static List<RecipeHolder<MachineRecipe>> getRecipes(ServerLevel level, MachineRecipeType recipeType, List<ConfigurableItemStack> itemInputs) {
         List<RecipeHolder<MachineRecipe>> recipes = new ArrayList<>(recipeType.getFluidOnlyRecipes(level));
         for (ConfigurableItemStack stack : itemInputs) {
-            if (!stack.isEmpty()) {
-                recipes.addAll(recipeType.getMatchingRecipes(level, stack.getResource().getItem()));
+            if (!stack.isEmpty() || (stack.getLockedInstance() != null && stack.source != null && stack.source.getMainNode().isActive())) {
+                recipes.addAll(recipeType.getMatchingRecipes(level, stack.getLockedInstance()));
             }
         }
         return recipes;
@@ -465,6 +472,25 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
             }
             int remainingAmount = input.amount();
             for (ConfigurableItemStack stack : stacks) {
+                Item locked = stack.getLockedInstance();
+                ItemStack lockedStack = locked != null ? locked.getDefaultInstance() : null;
+
+                if (input.ingredient().test(lockedStack) && stack.source != null) {
+                    IGridNode node = stack.source.getGridNode();
+                    AEKey what = AEItemKey.of(lockedStack);
+
+                    if (node != null && what != null) {
+                        IGrid grid = node.getGrid();
+                        int taken = (int) StorageHelper.poweredExtraction(grid.getEnergyService(), grid.getStorageService().getInventory(), what, remainingAmount, stack.source.source, Actionable.ofSimulate(simulate));
+                        if (taken > 0 && !simulate) {
+                            stats.addUsedItems(lockedStack.getItem(), taken);
+                        }
+                        remainingAmount -= taken;
+                        if (remainingAmount == 0)
+                            break;
+                    }
+                }
+
                 if (stack.getAmount() > 0 && stack.getResource().test(input.ingredient())) {
                     int taken = Math.min((int) stack.getAmount(), remainingAmount);
                     if (taken > 0 && !simulate) {
@@ -504,6 +530,27 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
                     continue;
                 }
                 ConfigurableFluidStack stack = stacks.get(istack);
+
+                if (stack.getLockedInstance() == null || !input.fluid().test(new FluidStack(stack.getLockedInstance(), 1))) {
+                    continue;
+                }
+
+                if (stack.source != null) {
+                    IGridNode node = stack.source.getGridNode();
+                    AEKey what = AEFluidKey.of(stack.getLockedInstance());
+
+                    if (node != null && what != null) {
+                        IGrid grid = node.getGrid();
+                        int taken = (int) StorageHelper.poweredExtraction(grid.getEnergyService(), grid.getStorageService().getInventory(), what, remainingAmount, stack.source.source, Actionable.ofSimulate(simulate));
+                        if (taken > 0 && !simulate) {
+                            stats.addUsedFluids(stack.getLockedInstance(), taken);
+                        }
+                        remainingAmount -= taken;
+                        if (remainingAmount == 0)
+                            break;
+                    }
+                }
+
                 if (fluidIngredientMatch(stack.getResource(), input.fluid())) {
                     long taken = Math.min(remainingAmount, stack.getAmount());
                     if (taken > 0) {
@@ -570,6 +617,15 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
                         int remainingCapacity = simulate || output.probability() < 1
                                 ? (int) stack.getRemainingCapacityFor(output.variant())
                                 : output.variant().getMaxStackSize() - (int) stack.getAmount();
+                        if (stack.source != null) {
+                            var grid = stack.source.getGridNode();
+
+                            if (grid != null) {
+                                // todo: ins bs below
+                                remainingAmount -= StorageHelper.poweredInsert(grid.getGrid().getEnergyService(), grid.getGrid().getStorageService().getInventory(), AEItemKey.of(output.getStack()), remainingAmount, stack.source.source);
+                            }
+                        }
+
                         int ins = Math.min(remainingAmount, remainingCapacity);
                         if (ins > 0) {
                             if (key.isBlank()) {
@@ -631,6 +687,7 @@ public class CrafterComponent implements MachineComponent.ServerOnly, CrafterAcc
             outer:
             for (int tries = 0; tries < 2; ++tries) {
                 for (int j = 0; j < stacks.size(); j++) {
+                    // todo: me hatch
                     ConfigurableFluidStack stack = stacks.get(j);
                     FluidVariant outputKey = FluidVariant.of(output.fluid());
                     if (stack.isResourceAllowedByLock(outputKey)

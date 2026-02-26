@@ -43,6 +43,7 @@ import aztech.modern_industrialization.machines.gui.MachineGuiParameters;
 import aztech.modern_industrialization.machines.models.MachineCasing;
 import aztech.modern_industrialization.machines.models.MachineCasings;
 import aztech.modern_industrialization.machines.multiblocks.HatchBlockEntity;
+import aztech.modern_industrialization.machines.multiblocks.MEHatchBlockEntity;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -118,7 +119,7 @@ public class MultiblockHatches {
                 MIInventory inventory = new MIInventory(itemStacks, Collections.emptyList(),
                         new SlotPositions.Builder().addSlots(xStart, yStart, columns, rows).build(), SlotPositions.empty());
                 return new ItemHatch(bet, new MachineGuiParameters.Builder(machine, true).build(), input, !prefix.equals("bronze"), inventory);
-            }, MachineBlockEntity::registerItemApi);
+            }, MachineBlockEntity::registerItemApi, MEHatchBlockEntity::registerME);
             definitions.add(def);
 
             var model = new MachineModelProperties.Builder(casing);
@@ -148,7 +149,7 @@ public class MultiblockHatches {
                 MIInventory inventory = new MIInventory(Collections.emptyList(), fluidStacks, SlotPositions.empty(),
                         new SlotPositions.Builder().addSlot(FLUID_HATCH_SLOT_X, FLUID_HATCH_SLOT_Y).build());
                 return new FluidHatch(bet, new MachineGuiParameters.Builder(machine, true).build(), input, !prefix.equals("bronze"), inventory);
-            }, MachineBlockEntity::registerFluidApi);
+            }, MachineBlockEntity::registerFluidApi, MEHatchBlockEntity::registerME);
             definitions.add(def);
 
             var model = new MachineModelProperties.Builder(casing);

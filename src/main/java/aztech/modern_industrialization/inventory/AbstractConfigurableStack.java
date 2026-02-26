@@ -24,6 +24,7 @@
 
 package aztech.modern_industrialization.inventory;
 
+import aztech.modern_industrialization.machines.multiblocks.MEHatchBlockEntity;
 import aztech.modern_industrialization.thirdparty.fabrictransfer.api.storage.StoragePreconditions;
 import aztech.modern_industrialization.thirdparty.fabrictransfer.api.storage.StorageView;
 import aztech.modern_industrialization.thirdparty.fabrictransfer.api.storage.TransferVariant;
@@ -44,6 +45,8 @@ import org.jspecify.annotations.Nullable;
 public abstract class AbstractConfigurableStack<T, K extends TransferVariant<T>> extends SnapshotJournal<ResourceAmount<K>>
         implements StorageView<K>, ConfigurableSlot {
     private final Map<ChangeListener, Object> listeners = new IdentityHashMap<>();
+    @Nullable
+    public MEHatchBlockEntity source;
     protected K key = getBlankVariant();
     protected long amount = 0;
     @Nullable
@@ -69,6 +72,7 @@ public abstract class AbstractConfigurableStack<T, K extends TransferVariant<T>>
         this.playerExtract = other.playerExtract;
         this.pipesInsert = other.pipesInsert;
         this.pipesExtract = other.pipesExtract;
+        this.source = other.source;
     }
 
     public AbstractConfigurableStack(CompoundTag tag, HolderLookup.Provider registries) {
